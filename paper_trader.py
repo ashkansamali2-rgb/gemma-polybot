@@ -33,7 +33,7 @@ class PaperWallet:
             return 0.015
         return 0.01 # Default 1%
 
-    def buy_shares(self, market_title, side, price, amount, category):
+    def buy_shares(self, market_title, side, price, amount, category, expiry_timestamp=None):
         fee_rate = self.get_fee_rate(category)
         fee = amount * fee_rate
         total_cost = amount + fee
@@ -51,7 +51,8 @@ class PaperWallet:
             "amount": amount,
             "shares": shares,
             "category": category,
-            "fee": fee
+            "fee": fee,
+            "expiry_timestamp": expiry_timestamp
         })
         self._save_state()
         return True, f"BOUGHT {shares:.2f} SHARES | FEE: €{fee:.4f}"
