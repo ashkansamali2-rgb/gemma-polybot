@@ -1,0 +1,8 @@
+mlx-lm
+mlx-vlm
+polymarket-apis
+streamlit
+python-dotenv
+pandas
+beautifulsoup4
+psutil
