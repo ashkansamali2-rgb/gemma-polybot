@@ -1,13 +1,14 @@
 import time
 import random
 import json
+import sys
 from engine import PolyEngine
 from paper_trader import PaperWallet
 
 # --- CONFIG ---
-POLLING_INTERVAL = 900  # 15 minutes
+POLLING_INTERVAL = 300  # 5 minutes
 EDGE_THRESHOLD = 0.15   # 15% Edge
-STAKE_AMOUNT = 1.00     # €1.00 per trade
+STAKE_AMOUNT = 0.60     # Exactly €0.60 per trade
 
 # --- TERMINAL STYLING ---
 G = "\033[92m"  # Green
@@ -21,26 +22,23 @@ def log_quantum(msg, color=G):
     timestamp = time.strftime("%H:%M:%S")
     print(f"{BOLD}[{timestamp}] {color}{msg}{C}")
 
+from polymarket_api import fetch_live_polymarket_data
+
 def fetch_top_markets():
     """
-    Simulates fetching top Geopolitics/Sports markets from Polymarket.
-    In a production scenario, this would use requests to hit Polymarket's Gamma API.
+    Fetches real markets from Polymarket's Gamma API.
     """
-    mock_markets = [
-        {"title": "Will there be a ceasefire in Ukraine by July?", "category": "Geopolitics", "expiry_hours": 60, "odds": "35%"},
-        {"title": "Lakers vs Nuggets: Who wins Game 5?", "category": "Sports", "expiry_hours": 12, "odds": "55%"},
-        {"title": "Will Bitcoin hit $100k before May?", "category": "Crypto", "expiry_hours": 72, "odds": "48%"},
-        {"title": "Will France win the Euro 2026?", "category": "Sports", "expiry_hours": 500, "odds": "15%"},
-        {"title": "US Presidential Election: Trump vs Biden?", "category": "Geopolitics", "expiry_hours": 4000, "odds": "50%"}
-    ]
-    # Filter for Geopolitics/Sports and Expiry < 72h
-    filtered = [m for m in mock_markets if m["category"] in ["Geopolitics", "Sports"] and m["expiry_hours"] < 72]
+    markets = fetch_live_polymarket_data(limit=20)
+    # Filter for Geopolitics/Sports/Other and Expiry < 72h
+    # Polymarket category might vary, so we just use the live data.
+    filtered = [m for m in markets if m["expiry_hours"] < 72]
     return filtered
 
 def run_autopilot():
     log_quantum("INITIATING_QUANTUM_AUTOPILOT...", B)
     engine = PolyEngine()
     wallet = PaperWallet()
+    trades_completed = 0
     
     while True:
         log_quantum("SCANNING_MARKETS...", Y)
@@ -65,18 +63,23 @@ def run_autopilot():
                 success, msg = wallet.buy_shares(
                     market_title=m["title"],
                     side="YES",
-                    price=0.50, # Mock price
+                    price=m["price"],
                     amount=STAKE_AMOUNT,
-                    category=m["category"]
+                    category=m["category"],
+                    expiry_timestamp=m.get("expiry_timestamp")
                 )
                 if success:
                     log_quantum(f"TRADE_EXECUTED: {m['title']} | {msg}", G)
+                    trades_completed += 1
+                    if trades_completed >= 5:
+                        log_quantum("🛑 DAILY LIMIT OF 5 TRADES REACHED. SHUTTING DOWN.", R)
+                        sys.exit()
                 else:
                     log_quantum(f"TRADE_FAILED: {msg}", R)
             else:
                 log_quantum(f"HOLD: Edge {edge:.1%} below threshold.", Y)
         
-        log_quantum(f"CYCLE_COMPLETE. CURRENT_BALANCE: €{wallet.get_balance():.2f}", B)
+        log_quantum(f"CYCLE_COMPLETE. TRADES_TODAY: {trades_completed}/5 | CURRENT_BALANCE: €{wallet.get_balance():.2f}", B)
         log_quantum(f"SLEEPING_FOR_{POLLING_INTERVAL // 60}_MINUTES...", C)
         time.sleep(POLLING_INTERVAL)
 
