@@ -7,7 +7,11 @@ def fetch_live_polymarket_data(limit=10):
     Fetches live market data from Polymarket Gamma API.
     URL: https://gamma-api.polymarket.com/events?limit=10&active=true&closed=false
     """
-    url = f"https://gamma-api.polymarket.com/events?limit={limit}&active=true&closed=false"
+    # Dynamically inject a recent start date to avoid legacy markets (e.g., first of the current year)
+    current_year = datetime.now(timezone.utc).year
+    start_date_min = f"{current_year}-01-01T00:00:00Z"
+    
+    url = f"https://gamma-api.polymarket.com/events?limit={limit}&active=true&closed=false&startDateMin={start_date_min}"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -15,9 +19,6 @@ def fetch_live_polymarket_data(limit=10):
         
         live_data = []
         for event in events:
-            title = event.get("title", "Unknown Event")
-            volume = float(event.get("volume", 0))
-            
             # Polymarket events can have multiple markets. Find the first active and non-closed one.
             markets = event.get("markets", [])
             active_market = None
@@ -28,6 +29,10 @@ def fetch_live_polymarket_data(limit=10):
             
             if not active_market:
                 continue
+            
+            # Use the raw question from the market if it exists, otherwise the event title
+            title = active_market.get("question") or event.get("title", "Unknown Event")
+            volume = float(event.get("volume", 0))
             
             outcome_prices = json.loads(active_market.get("outcomePrices", "[]"))
             

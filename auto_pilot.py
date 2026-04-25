@@ -28,11 +28,11 @@ def log_quantum(msg, color=G):
 def fetch_top_markets():
     """
     Fetches real markets from Polymarket's Gamma API.
-    Filters for short-term expiration (<= 10 hours).
+    Filters for short-term expiration (0 < expiry_hours <= 10).
     """
     markets = fetch_live_polymarket_data(limit=30)
-    # Filter for Expiry <= 10h
-    filtered = [m for m in markets if m["expiry_hours"] <= 10]
+    # Filter for Expiry strictly in the future and <= 10h
+    filtered = [m for m in markets if 0 < m.get("expiry_hours", 0) <= 10]
     return filtered
 
 def run_autopilot():
@@ -50,6 +50,9 @@ def run_autopilot():
             log_quantum(f"NEW_DAY_DETECTED: {today}. RESETTING_DAILY_BATCH.", G)
             last_trade_date = today
             daily_trades = 0
+            
+            print('\n[SYSTEM] Waking up. Running daily settlement check...')
+            subprocess.run(['python3', 'settlement.py'])
 
         if daily_trades >= DAILY_LIMIT:
             log_quantum(f"[DAILY BATCH COMPLETE. HIBERNATING UNTIL TOMORROW...]", Y)
