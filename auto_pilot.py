@@ -2,13 +2,16 @@ import time
 import random
 import json
 import sys
+from datetime import datetime, date
 from engine import PolyEngine
 from paper_trader import PaperWallet
+from polymarket_api import fetch_live_polymarket_data
 
 # --- CONFIG ---
 POLLING_INTERVAL = 300  # 5 minutes
 EDGE_THRESHOLD = 0.15   # 15% Edge
-STAKE_AMOUNT = 0.60     # Exactly €0.60 per trade
+STAKE_AMOUNT = 1.00     # Strictly €1.00 per trade
+DAILY_LIMIT = 5
 
 # --- TERMINAL STYLING ---
 G = "\033[92m"  # Green
@@ -22,40 +25,53 @@ def log_quantum(msg, color=G):
     timestamp = time.strftime("%H:%M:%S")
     print(f"{BOLD}[{timestamp}] {color}{msg}{C}")
 
-from polymarket_api import fetch_live_polymarket_data
-
 def fetch_top_markets():
     """
     Fetches real markets from Polymarket's Gamma API.
+    Filters for short-term expiration (<= 10 hours).
     """
-    markets = fetch_live_polymarket_data(limit=20)
-    # Filter for Geopolitics/Sports/Other and Expiry < 72h
-    # Polymarket category might vary, so we just use the live data.
-    filtered = [m for m in markets if m["expiry_hours"] < 72]
+    markets = fetch_live_polymarket_data(limit=30)
+    # Filter for Expiry <= 10h
+    filtered = [m for m in markets if m["expiry_hours"] <= 10]
     return filtered
 
 def run_autopilot():
-    log_quantum("INITIATING_QUANTUM_AUTOPILOT...", B)
+    log_quantum("INITIATING_DAILY_SNIPER_AUTOPILOT...", B)
     engine = PolyEngine()
     wallet = PaperWallet()
-    trades_completed = 0
+    
+    last_trade_date = None
+    daily_trades = 0
     
     while True:
-        log_quantum("SCANNING_MARKETS...", Y)
+        # Date-Aware Hibernation Check
+        today = date.today()
+        if last_trade_date != today:
+            log_quantum(f"NEW_DAY_DETECTED: {today}. RESETTING_DAILY_BATCH.", G)
+            last_trade_date = today
+            daily_trades = 0
+
+        if daily_trades >= DAILY_LIMIT:
+            log_quantum(f"[DAILY BATCH COMPLETE. HIBERNATING UNTIL TOMORROW...]", Y)
+            time.sleep(3600) # Sleep for 1 hour then check date again
+            continue
+
+        log_quantum(f"SCANNING_MARKETS... (DAILY_PROGRESS: {daily_trades}/{DAILY_LIMIT})", Y)
         markets = fetch_top_markets()
         
         if not markets:
-            log_quantum("NO_QUALIFIED_MARKETS_FOUND. SLEEPING...", Y)
+            log_quantum("NO_QUALIFIED_MARKETS_FOUND (<= 10H). SLEEPING...", Y)
         
         for m in markets:
+            if daily_trades >= DAILY_LIMIT:
+                break
+
             log_quantum(f"ANALYZING: {m['title']}...", B)
             
             # Analyze using Qwen 27B engine
             analysis = engine.analyze(m)
             
-            # Simulated edge detection from analysis text
-            # In real use, we'd parse the model's structured output
-            # For this pilot, we simulate the model finding an edge
+            # Simulated edge detection
             edge = random.uniform(0.05, 0.25)
             
             if edge > EDGE_THRESHOLD:
@@ -70,17 +86,13 @@ def run_autopilot():
                 )
                 if success:
                     log_quantum(f"TRADE_EXECUTED: {m['title']} | {msg}", G)
-                    trades_completed += 1
-                    if trades_completed >= 5:
-                        log_quantum("🛑 DAILY LIMIT OF 5 TRADES REACHED. SHUTTING DOWN.", R)
-                        sys.exit()
+                    daily_trades += 1
                 else:
                     log_quantum(f"TRADE_FAILED: {msg}", R)
             else:
                 log_quantum(f"HOLD: Edge {edge:.1%} below threshold.", Y)
         
-        log_quantum(f"CYCLE_COMPLETE. TRADES_TODAY: {trades_completed}/5 | CURRENT_BALANCE: €{wallet.get_balance():.2f}", B)
-        log_quantum(f"SLEEPING_FOR_{POLLING_INTERVAL // 60}_MINUTES...", C)
+        log_quantum(f"CYCLE_COMPLETE. CURRENT_BALANCE: €{wallet.get_balance():.2f}", B)
         time.sleep(POLLING_INTERVAL)
 
 if __name__ == "__main__":
