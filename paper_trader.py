@@ -10,12 +10,16 @@ class PaperWallet:
         if not os.path.exists(self.filename):
             initial_state = {
                 "balance": 5.00,
-                "positions": []
+                "positions": [],
+                "settled": []
             }
             self._save_state(initial_state)
             return initial_state
         with open(self.filename, "r") as f:
-            return json.load(f)
+            state = json.load(f)
+            if "settled" not in state:
+                state["settled"] = []
+            return state
 
     def _save_state(self, state=None):
         if state:
@@ -65,10 +69,16 @@ class PaperWallet:
         for pos in self.state["positions"]:
             if pos["market_title"] == market_title:
                 found = True
-                if pos["side"].lower() == winning_side.lower():
+                is_win = pos["side"].lower() == winning_side.lower()
+                if is_win:
                     # Pays out $1.00 per share
                     payout += pos["shares"]
-                # If incorrect, it's just removed (loss already deducted at buy)
+                
+                # Archive the trade
+                settled_entry = pos.copy()
+                settled_entry["result"] = "WON" if is_win else "LOST"
+                settled_entry["payout"] = pos["shares"] if is_win else 0
+                self.state.setdefault("settled", []).append(settled_entry)
             else:
                 updated_positions.append(pos)
         
