@@ -1,0 +1,7 @@
+polling_interval: 300
+edge_threshold: 0.15
+stake_amount: 1.0
+daily_limit: 5
+market_limit: 1000
+backtest_report_path: backtest_report.json
+wallet_file: sim_wallet.json

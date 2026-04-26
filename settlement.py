@@ -2,6 +2,7 @@ import json
 import requests
 import time
 from paper_trader import PaperWallet
+from typing import Optional
 
 # --- TERMINAL STYLING ---
 G = "\033[92m"  # Green
@@ -22,8 +23,8 @@ def log_receipt(title, shares, entry, payout, result):
     print(f"PAYOUT: {color}€{payout:.2f}{C}")
     print(f"{BOLD}{'='*60}{C}\n")
 
-def run_settlement():
-    wallet = PaperWallet()
+def run_settlement(wallet_file: str = "sim_wallet.json", wallet: Optional[PaperWallet] = None):
+    wallet = wallet if wallet is not None else PaperWallet(filename=wallet_file)
     positions = wallet.state.get("positions", [])
     
     if not positions:

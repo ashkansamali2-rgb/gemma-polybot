@@ -3,9 +3,10 @@
 Autonomous Polymarket research and paper-trading bot with:
 - MLX-based inference (`PolyEngine`)
 - a Bull/Bear/Judge debate loop
+- Lean-style layered runtime modules
 - paper wallet + settlement simulation
-- optional secure live-order wrapper
-- Streamlit dashboard
+- optional live execution abstraction
+- Streamlit dashboard + CLI entrypoint
 
 ## What This Codebase Does
 
@@ -35,6 +36,16 @@ Flow:
 - `finetune/generate_data.py` - Synthetic trap dataset generation
 - `.env.template` - Env var template
 - `requirements.txt` - Dependencies
+
+Layered engine modules:
+- `polybot/data_layer.py` - data ingestion (live + replay)
+- `polybot/signal_layer.py` - signal generation (debate + probability extraction)
+- `polybot/risk_layer.py` - risk model (edge threshold + daily limits)
+- `polybot/execution_layer.py` - broker abstraction (paper/live)
+- `polybot/portfolio_layer.py` - portfolio/accounting snapshots
+- `polybot/runner.py` - shared runner for live cycles and backtests
+- `polybot/logging_utils.py` - structured logs with per-run IDs
+- `polybot/cli.py` - command entrypoint
 
 ## Prerequisites
 
@@ -76,6 +87,43 @@ From `.env.template`:
 `secure_trader.py` stays in dry-run unless configured for live mode.
 
 ## Run Commands
+
+Preferred CLI (Lean-style):
+```bash
+# run one paper cycle
+python -m polybot run --mode paper --once
+
+# run continuous paper trading
+python -m polybot run --mode paper
+
+# run live mode (requires token_id in market data + credentials)
+python -m polybot run --mode live
+
+# run with config file (.json/.yaml/.yml)
+python -m polybot run --config polybot.config.example.yaml --mode paper
+```
+
+Backtest/replay mode:
+```bash
+python -m polybot backtest --replay-file finetune/replay_snapshots.jsonl
+
+# with explicit report output path
+python -m polybot backtest --replay-file finetune/replay_snapshots.jsonl --backtest-report-path reports/backtest_run_01.json
+
+# isolate wallet state for backtests
+python -m polybot backtest --replay-file finetune/replay_snapshots.jsonl --wallet-file backtests/wallet_run01.json
+```
+
+Utilities:
+```bash
+python -m polybot settle
+python -m polybot dashboard
+```
+
+Legacy command (kept for compatibility):
+```bash
+python auto_pilot.py
+```
 
 System check:
 ```bash
@@ -136,7 +184,7 @@ This repo currently has no packaged build artifact (no Dockerfile/CI release pip
 
 ```bash
 # bot service
-python auto_pilot.py
+python -m polybot run --mode paper
 
 # optional UI service
 streamlit run app.py --server.port 8501
@@ -151,16 +199,48 @@ Recommended production hardening (future work):
 ## State and Logs
 
 - `sim_wallet.json` - paper wallet state
-- `trading.log` - runtime log output
+- `trading.log` - structured JSON runtime logs (includes `run_id`)
 - `paper_trades.log` - dry-run secure trader log
 
 Never commit private keys or secrets.
+
+## Replay File Format
+
+Backtest/replay expects newline-delimited JSON (`.jsonl`) where each line is one market snapshot object. Minimum recommended fields:
+
+```json
+{"title":"Will BTC close above 70k today?","odds":"62%","price":0.62,"volume":1200000,"category":"Crypto","expiry_timestamp":1730000000}
+```
+
+Optional fields for richer metrics:
+- `resolved_outcome`: `"YES"` or `"NO"` (enables win rate calculation on filled trades)
+
+## Backtest Reports
+
+Backtest command writes a JSON report (default: `backtest_report.json`) containing:
+- `win_rate` (when `resolved_outcome` exists in replay snapshots)
+- `average_edge`
+- `equity_curve` (balance snapshot after each filled trade)
+- execution totals (`trades_attempted`, `trades_filled`, etc.)
+
+## Config File Support
+
+PolyBot can load config from JSON or YAML:
+- `.json`
+- `.yaml`
+- `.yml`
+
+Example:
+```bash
+python -m polybot run --config polybot.config.example.yaml --mode paper
+python -m polybot backtest --config polybot.config.example.yaml --replay-file finetune/replay_snapshots.jsonl
+```
 
 ## Typical Workflow
 
 ```bash
 pip install -r requirements.txt
 python system_check.py
-python auto_pilot.py
-streamlit run app.py
+python -m polybot run --mode paper
+python -m polybot dashboard
 ```
