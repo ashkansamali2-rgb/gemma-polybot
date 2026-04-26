@@ -1,6 +1,21 @@
-.venv/
+# Enviormental Variables
+.env.local
 .env
+secrets.json
+sim_wallet.json
+
+# Virtual Enviorments
+.venv/
+
+# Model Files
 qwen-model/
 poly_adapters/
+
+# Other
 __pycache__/
-sim_wallet.json
+.DS_Store
+* .pyc
+
+
+
+
