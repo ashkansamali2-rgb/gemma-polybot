@@ -178,32 +178,6 @@ Brier evaluation:
 python evaluate.py
 ```
 
-## Build and Deploy
-
-This repo currently has no packaged build artifact (no Dockerfile/CI release pipeline). Practical deployment is service-style:
-
-```bash
-# bot service
-python -m polybot run --mode paper
-
-# optional UI service
-streamlit run app.py --server.port 8501
-```
-
-Recommended production hardening (future work):
-- Add `Dockerfile` + `docker-compose.yml`
-- Add process supervision (`systemd`, `pm2`, or `supervisord`)
-- Centralize logs/alerts for `trading.log`
-- Use secrets manager instead of local env files
-
-## State and Logs
-
-- `sim_wallet.json` - paper wallet state
-- `trading.log` - structured JSON runtime logs (includes `run_id`)
-- `paper_trades.log` - dry-run secure trader log
-
-Never commit private keys or secrets.
-
 ## Replay File Format
 
 Backtest/replay expects newline-delimited JSON (`.jsonl`) where each line is one market snapshot object. Minimum recommended fields:
