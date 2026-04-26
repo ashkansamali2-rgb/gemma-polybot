@@ -22,4 +22,4 @@ state/
 .pytest_cache/
 .tmp_pytest/
 pytest-cache-files-*/
-logs/
+
