@@ -2,6 +2,7 @@
 .env.local
 .env
 secrets.json
+sim_wallet.json
 
 # Virtual Enviorments
 .venv/
@@ -12,16 +13,13 @@ poly_adapters/
 
 # Other
 __pycache__/
+.uv-cache/
 .DS_Store
 *.pyc
-logs/
 reports/
 state/
 .testdata/
 .pytest_cache/
 .tmp_pytest/
 pytest-cache-files-*/
-
-
-
-
+logs/
