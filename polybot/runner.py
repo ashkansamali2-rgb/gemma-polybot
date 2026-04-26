@@ -23,7 +23,7 @@ from polybot.execution_layer import Broker, ExecutionPlanner, LiveBroker, PaperB
 from polybot.logging_utils import configure_structured_logging, new_run_id
 from polybot.portfolio_layer import PortfolioAccounting
 from polybot.risk_layer import RiskModel
-from polybot.signal_layer import CandidateRanker, DebateSignalGenerator
+from polybot.signal_layer import CandidateRanker, MarketEnsembleGenerator
 from polybot.types import BacktestReport, ForecastRecord, ReplayFrame, TradeRecord
 from polybot_legacy.engine import PolyEngine
 from polybot_legacy.settlement import run_settlement
@@ -54,7 +54,7 @@ class StrategyRunner:
         self.data = LivePolymarketDataSource()
         self.calibration_manager = CalibrationManager(config.calibration)
         self.uncertainty_engine = UncertaintyEngine(config.uncertainty)
-        self.signal = DebateSignalGenerator(
+        self.signal = MarketEnsembleGenerator(
             PolyEngine(),
             config=config,
             calibration_manager=self.calibration_manager,
@@ -399,6 +399,8 @@ class StrategyRunner:
             reason=reason,
         )
         if not ok_to_trade:
+            decision.action = "HOLD"
+            decision.reason = reason
             if self.risk.should_unwind(decision, portfolio_snapshot):
                 result = self.broker.reduce_yes(
                     frame.market,
@@ -418,6 +420,30 @@ class StrategyRunner:
             uncertainty_score=decision.uncertainty_score,
             stake_amount=stake_amount,
         )
+        
+        # Sizing up might have caused slippage that destroys the edge! Check it again.
+        final_edge = self.execution_planner.edge_after_costs(
+            decision.calibrated_probability,
+            execution_plan,
+        )
+        if final_edge <= self.config.market_filters.min_edge_threshold:
+            self._log(
+                "trade_skipped", 
+                market=decision.market_title, 
+                reason="NEGATIVE_EDGE_AFTER_SIZING_UP",
+                edge_after_costs=final_edge,
+            )
+            decision.action = "HOLD"
+            decision.reason = "NEGATIVE_EDGE_AFTER_SIZING_UP"
+            return
+            
+        decision.action = "BUY"
+        decision.reason = "POST_COST_EDGE_POSITIVE"
+        decision.execution_plan = execution_plan.to_dict()
+        decision.executable_price = execution_plan.expected_fill_price
+        decision.edge_after_costs = final_edge
+        decision.stake_amount = stake_amount
+
         result = self.broker.buy_yes(
             frame.market,
             stake_amount,

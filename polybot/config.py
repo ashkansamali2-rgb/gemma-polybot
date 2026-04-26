@@ -91,6 +91,7 @@ class CalibrationConfig:
 @dataclass
 class UncertaintyConfig:
     judge_samples: int = 5
+    ensemble_agents: int = 50
     prompt_variants: int = 3
     evidence_subsets: int = 3
     no_trade_above: float = 0.35

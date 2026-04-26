@@ -54,7 +54,8 @@ class ExecutionPlanner:
             spread_bps = ((market.best_ask - market.best_bid) / market.mid_price) * 10000.0
         stale_quote = False
         if market.orderbook_timestamp is not None:
-            stale_quote = (market.forecast_timestamp - market.orderbook_timestamp) > 90.0
+            stale_quote_limit = getattr(self.config, "stale_quote_seconds", 90.0)
+            stale_quote = (market.forecast_timestamp - market.orderbook_timestamp) > stale_quote_limit
         return ExecutionPlan(
             execution_mode=self.config.execution_mode,
             expected_fill_price=weighted_fill,
@@ -182,10 +183,18 @@ class LiveBroker(Broker):
                 mode=self.mode(),
                 decision_id=decision_id,
             )
+        tick_size = float(market.tick_size) if market.tick_size > 0 else 0.01
+        tick_str = f"{tick_size:.10f}".rstrip("0")
+        decimals = len(tick_str.split(".")[1]) if "." in tick_str else 0
+        
+        raw_price = float(execution_plan.expected_fill_price)
+        expected_price = round(round(raw_price / tick_size) * tick_size, decimals)
+        shares_to_buy = round(amount / expected_price, 2) if expected_price > 0 else 0.0
+        
         payload = self.trader.place_safe_bet(
             side="BUY",
-            price=float(execution_plan.expected_fill_price),
-            amount=amount,
+            price=expected_price,
+            amount=shares_to_buy,
             token_id=token_id,
         )
         return ExecutionResult(
@@ -200,9 +209,38 @@ class LiveBroker(Broker):
         )
 
     def reduce_yes(self, market: MarketObservation, amount: float) -> ExecutionResult:
+        token_id = market.token_id
+        if not token_id:
+            return ExecutionResult(
+                success=False,
+                message="token_id missing in market data for live execution reduction",
+                mode=self.mode(),
+            )
+        
+        tick_size = float(market.tick_size) if market.tick_size > 0 else 0.01
+        tick_str = f"{tick_size:.10f}".rstrip("0")
+        decimals = len(tick_str.split(".")[1]) if "." in tick_str else 0
+
+        raw_sell_price = float(market.best_bid if market.best_bid is not None else market.mid_price)
+        sell_price = round(round(raw_sell_price / tick_size) * tick_size, decimals)
+        shares_to_sell = round(amount / sell_price, 2) if sell_price > 0 else 0.0
+        
+        if shares_to_sell <= 0:
+            return ExecutionResult(
+                success=False,
+                message="amount implies zero shares to sell",
+                mode=self.mode(),
+            )
+            
+        payload = self.trader.place_safe_bet(
+            side="SELL",
+            price=float(sell_price),
+            amount=shares_to_sell,
+            token_id=token_id,
+        )
         return ExecutionResult(
-            success=False,
-            message="inventory reduction not implemented for live broker",
+            success=payload.get("status") == "success",
+            message=payload.get("message", str(payload)),
             mode=self.mode(),
         )
 

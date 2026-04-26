@@ -3,7 +3,7 @@ from polybot.config import StrategyConfig
 from polybot.data_layer import FeatureStore, normalize_market_snapshot
 from polybot.execution_layer import ExecutionPlanner
 from polybot.risk_layer import RiskModel
-from polybot.signal_layer import CandidateRanker, DebateSignalGenerator, parse_structured_forecast
+from polybot.signal_layer import CandidateRanker, MarketEnsembleGenerator, parse_structured_forecast
 from polybot.types import ReplayFrame
 
 
@@ -68,10 +68,10 @@ def test_parse_structured_forecast_requires_full_json_contract():
     assert parsed.raw_probability == 0.6
 
 
-def test_signal_generator_falls_back_to_hold_on_invalid_judge_output():
+def test_signal_generator_falls_back_to_hold_on_invalid_ensemble_quotes():
     config = StrategyConfig()
     engine = StructuredEngine("FINAL_PROBABILITY: 62%")
-    generator = DebateSignalGenerator(
+    generator = MarketEnsembleGenerator(
         engine,
         config=config,
         calibration_manager=CalibrationManager(config.calibration),
@@ -84,7 +84,7 @@ def test_signal_generator_falls_back_to_hold_on_invalid_judge_output():
     decision = generator.evaluate_frame(frame, calibration_artifact=artifact, ranking=ranking)
 
     assert decision.action == "HOLD"
-    assert decision.reason == "FAILED_STRUCTURED_FORECAST"
+    assert decision.reason == "FAILED_ENSEMBLE_QUOTES"
 
 
 def test_execution_planner_and_risk_model_use_post_cost_edge_and_caps():

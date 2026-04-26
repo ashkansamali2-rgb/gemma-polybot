@@ -11,7 +11,7 @@ def fetch_live_polymarket_data(limit=1000):
         f"?limit={limit}&active=true&closed=false&end_date_max={max_date}&order=end_date_asc"
     )
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=15)
         response.raise_for_status()
         markets = response.json()
         print(f"[SYSTEM] Fetched {len(markets)} raw markets from API.")
@@ -56,8 +56,31 @@ def fetch_live_polymarket_data(limit=1000):
             if not (0 < expiry_hours <= 24):
                 continue
 
+            event_id = event.get("id") or event.get("slug")
+            market_id = active_market.get("conditionId") or active_market.get("questionID") or active_market.get("id") or event_id
+            token_id = None
+            clob_tokens_str = active_market.get("clobTokenIds", "[]")
+            if clob_tokens_str:
+                if isinstance(clob_tokens_str, list) and len(clob_tokens_str) > 0:
+                    token_id = clob_tokens_str[0]
+                elif isinstance(clob_tokens_str, str):
+                    try:
+                        clob_tokens = json.loads(clob_tokens_str)
+                    except json.JSONDecodeError:
+                        import ast
+                        try:
+                            clob_tokens = ast.literal_eval(clob_tokens_str)
+                        except (ValueError, TypeError, SyntaxError):
+                            clob_tokens = []
+                    
+                    if isinstance(clob_tokens, list) and len(clob_tokens) > 0:
+                        token_id = clob_tokens[0]
+
             live_data.append(
                 {
+                    "event_id": event_id,
+                    "market_id": market_id,
+                    "token_id": token_id,
                     "title": title,
                     "odds": f"{int(price * 100)}%",
                     "price": price,

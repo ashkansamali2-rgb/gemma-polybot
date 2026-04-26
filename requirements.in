@@ -8,3 +8,6 @@ beautifulsoup4
 psutil
 requests
 pyyaml
+numpy
+pytest
+turboquant-mlx @ git+https://github.com/arozanov/turboquant-mlx.git

@@ -194,7 +194,41 @@ class CandidateRanker:
         )
 
 
-class DebateSignalGenerator:
+ENSEMBLE_PROMPT_TEMPLATE = (
+    "<|im_start|>system\nAct as a specialized prediction market trader. "
+    "Output valid JSON only. Required keys: bid, ask, short_rationale. "
+    "bid and ask must be 0-1 floats representing your limit order. bid < ask."
+    "<|im_end|>\n"
+    "<|im_start|>user\n{context}\n\n"
+    "Your assigned persona for this execution is: [{persona}]. Strictly embody this persona.\n"
+    "<|im_end|>\n<|im_start|>assistant\n"
+)
+
+PERSONAS = [
+    "Aggressive Momentum Trader", "Skeptical Value Investor", "Pure Statistician",
+    "Contrarian Risk-Seeker", "Geopolitical Hawk", "Market Microstructure Expert",
+    "Macro-Economist", "News-Driven Retail Trader", "Algorithmic Arbitrageur",
+    "Conservative Option Writer", "High-Frequency Taker", "Behavioral Finance Expert",
+]
+
+
+def extract_ensemble_quote(text: str) -> Optional[tuple[float, float, str]]:
+    json_blob = _extract_json_object(text)
+    if not json_blob:
+        return None
+    try:
+        payload = json.loads(json_blob)
+        bid = float(payload.get("bid", 0))
+        ask = float(payload.get("ask", 0))
+        rationale = str(payload.get("short_rationale", ""))
+        if 0 <= bid <= ask <= 1:
+            return bid, ask, rationale
+    except Exception:
+        pass
+    return None
+
+
+class MarketEnsembleGenerator:
     def __init__(
         self,
         engine: PolyEngine,
@@ -224,60 +258,83 @@ class DebateSignalGenerator:
 
         evidence = self._select_evidence(frame.evidence, market.category)
         context = self._build_context(frame, evidence)
-        bull_thesis = self.engine.analyze(market.to_dict(), raw_prompt=BULL_PROMPT_TEMPLATE.format(context=context))
-        bear_thesis = self.engine.analyze(
-            market.to_dict(),
-            raw_prompt=BEAR_PROMPT_TEMPLATE.format(context=context, bull_thesis=bull_thesis),
-        )
 
-        parsed_responses: List[ForecastResponse] = []
-        rationales: List[str] = []
-        total_variants = max(
-            1,
-            max(self.config.uncertainty.judge_samples, self.config.uncertainty.prompt_variants),
-        )
-        for sample_idx in range(total_variants):
-            judge_output = self.engine.analyze(
-                market.to_dict(),
-                raw_prompt=JUDGE_PROMPT_TEMPLATE.format(
-                    context=context,
-                    bull_thesis=bull_thesis,
-                    bear_thesis=bear_thesis,
-                    variant_label=f"variant-{sample_idx % max(self.config.uncertainty.prompt_variants, 1)}",
-                    subset_label=f"subset-{sample_idx % max(self.config.uncertainty.evidence_subsets, 1)}",
-                ),
-                max_tokens=2048,
-            )
-            parsed = parse_structured_forecast(judge_output)
-            if parsed is None:
-                continue
-            parsed.bull_thesis = bull_thesis
-            parsed.bear_thesis = bear_thesis
-            parsed_responses.append(parsed)
-            rationales.append(parsed.short_rationale)
+        print(f"[SYSTEM] Spinning up {self.config.uncertainty.ensemble_agents}-Agent Internal Market Ensemble...")
 
-        if not parsed_responses:
+        bids = []
+        asks = []
+        rationales = []
+        
+        # Internal Order Book Generation
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _get_quote(i):
+            persona = PERSONAS[i % len(PERSONAS)]
+            prompt = ENSEMBLE_PROMPT_TEMPLATE.format(persona=persona, context=context)
+            try:
+                output = self.engine.analyze(market.to_dict(), raw_prompt=prompt, max_tokens=1024)
+                return persona, extract_ensemble_quote(output)
+            except Exception as e:
+                print(f"[ERROR] Agent {persona} failed: {e}")
+                return persona, None
+
+        max_workers = min(16, self.config.uncertainty.ensemble_agents)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_get_quote, i) for i in range(self.config.uncertainty.ensemble_agents)]
+            for future in as_completed(futures):
+                persona, quote = future.result()
+                if quote:
+                    b, a, r = quote
+                    bids.append(b)
+                    asks.append(a)
+                    rationales.append(f"[{persona}] {r}")
+        
+        if not bids or not asks:
             return self._hold_decision(
                 frame,
-                reason="FAILED_STRUCTURED_FORECAST",
+                reason="FAILED_ENSEMBLE_QUOTES",
                 rank_score=ranking.rank_score,
                 raw_analysis="",
             )
 
-        raw_probability = float(mean(item.raw_probability for item in parsed_responses))
+        import numpy as np
+
+        # Market Equilibrium Price Calculation (Supply/Demand curve intersection)
+        if max(bids) < min(asks):
+            equilibrium_price = (max(bids) + min(asks)) / 2.0
+        else:
+            best_volume = 0
+            clearing_prices = []
+            for p_int in range(1, 100):
+                p = p_int / 100.0
+                demand = sum(1 for b in bids if b >= p)
+                supply = sum(1 for a in asks if a <= p)
+                volume = min(demand, supply)
+                
+                if volume > best_volume:
+                    best_volume = volume
+                    clearing_prices = [p]
+                elif volume == best_volume and volume > 0:
+                    clearing_prices.append(p)
+            equilibrium_price = sum(clearing_prices) / len(clearing_prices) if clearing_prices else 0.5
+
+        raw_probability = equilibrium_price
         calibrated_probability = self.calibration_manager.calibrate(raw_probability, calibration_artifact)
         calibration_residual = abs(calibrated_probability - raw_probability)
+        
+        # Use average bid-ask spread to inform uncertainty
         uncertainty = self.uncertainty_engine.estimate(
             market_id=market.market_id,
-            sample_probabilities=[item.raw_probability for item in parsed_responses],
+            sample_probabilities=[(b+a)/2 for b, a in zip(bids, asks)],
             rationales=rationales,
             calibration_residual=calibration_residual,
         )
+        
         confidence_low, confidence_high = self.uncertainty_engine.conformal_band(
             calibrated_probability,
             [calibration_residual],
         )
-        primary = parsed_responses[0]
+
         return SignalDecision(
             market_id=market.market_id,
             event_id=market.event_id,
@@ -297,13 +354,13 @@ class DebateSignalGenerator:
             update_instability_score=uncertainty.update_instability_score,
             confidence_low=confidence_low,
             confidence_high=confidence_high,
-            raw_confidence_band=primary.confidence_band,
+            raw_confidence_band=[float(np.percentile(bids, 10)), float(np.percentile(asks, 90))],
             evidence_ids=[record.evidence_id for record in evidence],
-            key_drivers=primary.key_drivers,
-            counter_drivers=primary.counter_drivers,
-            invalidation_condition=primary.invalidation_condition,
-            short_rationale=primary.short_rationale,
-            raw_analysis=primary.raw_response,
+            key_drivers=["Ensemble Demand Concentration", "Persona-weighted bids"],
+            counter_drivers=["Ensemble Supply Resistance", "Persona-weighted asks"],
+            invalidation_condition="Major internal orderbook imbalance shift",
+            short_rationale=f"Market Ensemble Equilibrium at {equilibrium_price:.2f}. " + "\n".join(rationales[:2]),
+            raw_analysis=f"Total Quotes: {len(bids)}. Top Bid/Ask: {max(bids):.2f}/{min(asks):.2f}",
             calibration_artifact_version=calibration_artifact.version,
             calibration_method=calibration_artifact.method,
             execution_mode=self.config.execution.execution_mode,

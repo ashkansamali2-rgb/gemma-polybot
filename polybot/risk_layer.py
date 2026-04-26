@@ -67,7 +67,7 @@ class RiskModel:
         if self._event_exposure(portfolio_snapshot, market.event_id) >= self.config.exposure.thesis_capital_limit:
             reasons.append("THESIS_CAP_REACHED")
         if signal.calibration_method == "identity" and self.config.calibration.enabled:
-            reasons.append("CALIBRATOR_WARMUP_ONLY")
+            pass # Removed CALIBRATOR_WARMUP_ONLY blocker to allow fallback live trading
 
         size = self.position_size(signal, execution_plan, portfolio_snapshot, market.category)
         if size < self.config.sizing.min_trade_size:
