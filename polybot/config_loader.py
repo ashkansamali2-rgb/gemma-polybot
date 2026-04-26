@@ -1,9 +1,34 @@
+from __future__ import annotations
+
 import json
 import os
 from dataclasses import asdict
 from typing import Any, Dict
 
-from polybot.config import StrategyConfig
+from polybot.config import (
+    CalibrationConfig,
+    EvaluationConfig,
+    ExecutionConfig,
+    ExposureConfig,
+    MarketFilterConfig,
+    OpsConfig,
+    ProviderConfig,
+    RetrievalConfig,
+    SizingConfig,
+    StrategyConfig,
+    StrategyVersionConfig,
+    UncertaintyConfig,
+)
+
+
+LEGACY_KEY_MAP = {
+    "market_limit": ("provider", "market_limit"),
+    "edge_threshold": ("market_filters", "min_edge_threshold"),
+    "stake_amount": ("sizing", "default_stake_amount"),
+    "daily_limit": ("exposure", "daily_trade_limit"),
+    "backtest_report_path": ("evaluation", "backtest_report_path"),
+    "wallet_file": ("evaluation", "wallet_file"),
+}
 
 
 def _load_json(path: str) -> Dict[str, Any]:
@@ -32,29 +57,73 @@ def load_config_file(path: str) -> Dict[str, Any]:
     raise ValueError("Unsupported config type. Use .json, .yaml, or .yml")
 
 
-def build_config(*, config_file: str = "", overrides: Dict[str, Any] = None) -> StrategyConfig:
+def _set_nested(payload: Dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    cursor = payload
+    for key in path[:-1]:
+        child = cursor.get(key)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[key] = child
+        cursor = child
+    cursor[path[-1]] = value
+
+
+def _normalize_legacy_keys(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = json.loads(json.dumps(payload))
+    for key, path in LEGACY_KEY_MAP.items():
+        if key in payload and value_is_present(payload[key]):
+            _set_nested(normalized, path, payload[key])
+    return normalized
+
+
+def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
+    for key, value in overlay.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def value_is_present(value: Any) -> bool:
+    return value is not None
+
+
+def build_config(
+    *,
+    config_file: str = "",
+    defaults: Dict[str, Any] | None = None,
+    overrides: Dict[str, Any] | None = None,
+) -> StrategyConfig:
     config_dict = asdict(StrategyConfig())
+
+    if defaults:
+        _deep_merge(config_dict, _normalize_legacy_keys(defaults))
+
+    if config_file:
+        loaded = load_config_file(config_file)
+        if not isinstance(loaded, dict):
+            raise ValueError("Config file root must be a JSON/YAML object")
+        _deep_merge(config_dict, _normalize_legacy_keys(loaded))
+
     if overrides:
-        for key, value in overrides.items():
-            if key in config_dict and value is not None:
-                config_dict[key] = value
+        present_overrides = {
+            key: value for key, value in overrides.items() if value_is_present(value)
+        }
+        _deep_merge(config_dict, _normalize_legacy_keys(present_overrides))
 
-    if not config_file:
-        return StrategyConfig(**config_dict)
-
-    loaded = load_config_file(config_file)
-    if not isinstance(loaded, dict):
-        raise ValueError("Config file root must be a JSON/YAML object")
-
-    # Config file overrides base defaults.
-    for key, value in loaded.items():
-        if key in config_dict:
-            config_dict[key] = value
-
-    # Explicit CLI flags override config file values.
-    if overrides:
-        for key, value in overrides.items():
-            if key in config_dict and value is not None:
-                config_dict[key] = value
-
-    return StrategyConfig(**config_dict)
+    return StrategyConfig(
+        polling_interval=config_dict["polling_interval"],
+        provider=ProviderConfig(**config_dict["provider"]),
+        retrieval=RetrievalConfig(**config_dict["retrieval"]),
+        calibration=CalibrationConfig(**config_dict["calibration"]),
+        uncertainty=UncertaintyConfig(**config_dict["uncertainty"]),
+        market_filters=MarketFilterConfig(**config_dict["market_filters"]),
+        execution=ExecutionConfig(**config_dict["execution"]),
+        sizing=SizingConfig(**config_dict["sizing"]),
+        exposure=ExposureConfig(**config_dict["exposure"]),
+        evaluation=EvaluationConfig(**config_dict["evaluation"]),
+        ops=OpsConfig(**config_dict["ops"]),
+        versions=StrategyVersionConfig(**config_dict["versions"]),
+        category_profiles=config_dict["category_profiles"],
+    )

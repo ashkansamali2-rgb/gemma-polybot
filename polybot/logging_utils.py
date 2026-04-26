@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -24,7 +25,7 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=True)
 
 
-def configure_structured_logging(run_id: str, log_file: str = "trading.log") -> logging.Logger:
+def configure_structured_logging(run_id: str, log_file: str = "logs/trading.log") -> logging.Logger:
     logger = logging.getLogger("polybot")
     logger.setLevel(logging.INFO)
     logger.handlers = []
@@ -34,6 +35,9 @@ def configure_structured_logging(run_id: str, log_file: str = "trading.log") -> 
 
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(formatter)
+    log_dir = os.path.dirname(log_file)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
     file_handler = logging.FileHandler(log_file)
     file_handler.setFormatter(formatter)
 

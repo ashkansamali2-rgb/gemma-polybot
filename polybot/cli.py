@@ -1,9 +1,79 @@
+from __future__ import annotations
+
 import argparse
 import subprocess
 import sys
+from typing import Any, Dict
 
 from polybot.config_loader import build_config
 from polybot.logging_utils import new_run_id
+from polybot.paths import APPS_DIR
+
+
+CLI_OVERRIDE_MAP = {
+    "polling_interval": ("polling_interval",),
+    "edge_threshold": ("market_filters", "min_edge_threshold"),
+    "stake_amount": ("sizing", "default_stake_amount"),
+    "daily_limit": ("exposure", "daily_trade_limit"),
+    "market_limit": ("provider", "market_limit"),
+    "backtest_report_path": ("evaluation", "backtest_report_path"),
+    "wallet_file": ("evaluation", "wallet_file"),
+    "uncertainty_no_trade_above": ("uncertainty", "no_trade_above"),
+    "max_spread_bps": ("market_filters", "max_spread_bps"),
+    "min_depth": ("market_filters", "min_depth"),
+    "max_trade_size": ("sizing", "max_trade_size"),
+    "strategy_id": ("versions", "strategy_id"),
+}
+
+
+def _set_nested(payload: Dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    cursor = payload
+    for key in path[:-1]:
+        child = cursor.get(key)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[key] = child
+        cursor = child
+    cursor[path[-1]] = value
+
+
+def _collect_overrides(args, option_names) -> Dict[str, Any]:
+    overrides: Dict[str, Any] = {}
+    for option_name in option_names:
+        value = getattr(args, option_name)
+        if value is None:
+            continue
+        path = CLI_OVERRIDE_MAP.get(option_name, (option_name,))
+        _set_nested(overrides, path, value)
+    return overrides
+
+
+def _run_defaults():
+    return {
+        "polling_interval": 300,
+        "market_filters": {"min_edge_threshold": 0.03},
+        "sizing": {"default_stake_amount": 1.0, "max_trade_size": 3.0},
+        "exposure": {"daily_trade_limit": 5},
+        "provider": {"market_limit": 1000},
+        "evaluation": {
+            "backtest_report_path": "reports/backtest_report.json",
+            "wallet_file": "state/sim_wallet.json",
+        },
+    }
+
+
+def _backtest_defaults(run_id: str):
+    return {
+        "polling_interval": 0,
+        "market_filters": {"min_edge_threshold": 0.03},
+        "sizing": {"default_stake_amount": 1.0, "max_trade_size": 3.0},
+        "exposure": {"daily_trade_limit": 999999},
+        "provider": {"market_limit": 999999},
+        "evaluation": {
+            "backtest_report_path": "reports/backtest_report.json",
+            "wallet_file": f"state/backtest_wallet_{run_id}.json",
+        },
+    }
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -21,6 +91,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run_cmd.add_argument("--market-limit", type=int)
     run_cmd.add_argument("--backtest-report-path")
     run_cmd.add_argument("--wallet-file")
+    run_cmd.add_argument("--uncertainty-no-trade-above", type=float)
+    run_cmd.add_argument("--max-spread-bps", type=float)
+    run_cmd.add_argument("--min-depth", type=float)
+    run_cmd.add_argument("--max-trade-size", type=float)
+    run_cmd.add_argument("--strategy-id")
 
     backtest_cmd = sub.add_parser("backtest", help="Run replay/backtest from snapshots")
     backtest_cmd.add_argument("--replay-file", required=True)
@@ -31,6 +106,11 @@ def _build_parser() -> argparse.ArgumentParser:
     backtest_cmd.add_argument("--market-limit", type=int)
     backtest_cmd.add_argument("--backtest-report-path")
     backtest_cmd.add_argument("--wallet-file")
+    backtest_cmd.add_argument("--uncertainty-no-trade-above", type=float)
+    backtest_cmd.add_argument("--max-spread-bps", type=float)
+    backtest_cmd.add_argument("--min-depth", type=float)
+    backtest_cmd.add_argument("--max-trade-size", type=float)
+    backtest_cmd.add_argument("--strategy-id")
 
     sub.add_parser("settle", help="Settle resolved paper positions")
     sub.add_parser("dashboard", help="Launch Streamlit dashboard")
@@ -44,45 +124,41 @@ def main():
     run_id = new_run_id()
 
     if args.command == "settle":
-        from settlement import run_settlement
+        from polybot_legacy.settlement import run_settlement
 
         run_settlement()
         return
 
     if args.command == "dashboard":
-        subprocess.run([sys.executable, "-m", "streamlit", "run", "app.py"], check=False)
+        subprocess.run(
+            [sys.executable, "-m", "streamlit", "run", str(APPS_DIR / "streamlit" / "app.py")],
+            check=False,
+        )
         return
 
     if args.command == "run":
         from polybot.runner import build_runner
 
-        overrides = {
-            "polling_interval": 300,
-            "edge_threshold": 0.15,
-            "stake_amount": 1.0,
-            "daily_limit": 5,
-            "market_limit": 1000,
-            "backtest_report_path": "backtest_report.json",
-            "wallet_file": "sim_wallet.json",
-        }
-        if args.polling_interval is not None:
-            overrides["polling_interval"] = args.polling_interval
-        if args.edge_threshold is not None:
-            overrides["edge_threshold"] = args.edge_threshold
-        if args.stake_amount is not None:
-            overrides["stake_amount"] = args.stake_amount
-        if args.daily_limit is not None:
-            overrides["daily_limit"] = args.daily_limit
-        if args.market_limit is not None:
-            overrides["market_limit"] = args.market_limit
-        if args.backtest_report_path is not None:
-            overrides["backtest_report_path"] = args.backtest_report_path
-        if args.wallet_file is not None:
-            overrides["wallet_file"] = args.wallet_file
-
         config = build_config(
             config_file=args.config,
-            overrides=overrides,
+            defaults=_run_defaults(),
+            overrides=_collect_overrides(
+                args,
+                (
+                    "polling_interval",
+                    "edge_threshold",
+                    "stake_amount",
+                    "daily_limit",
+                    "market_limit",
+                    "backtest_report_path",
+                    "wallet_file",
+                    "uncertainty_no_trade_above",
+                    "max_spread_bps",
+                    "min_depth",
+                    "max_trade_size",
+                    "strategy_id",
+                ),
+            ),
         )
         runner = build_runner(mode=args.mode, config=config, run_id=run_id)
         runner.run_live(once=args.once)
@@ -91,31 +167,25 @@ def main():
     if args.command == "backtest":
         from polybot.runner import build_runner
 
-        overrides = {
-            "polling_interval": 0,
-            "edge_threshold": 0.15,
-            "stake_amount": 1.0,
-            "daily_limit": 999999,
-            "market_limit": 999999,
-            "backtest_report_path": "backtest_report.json",
-            "wallet_file": "backtest_wallet.json",
-        }
-        if args.edge_threshold is not None:
-            overrides["edge_threshold"] = args.edge_threshold
-        if args.stake_amount is not None:
-            overrides["stake_amount"] = args.stake_amount
-        if args.daily_limit is not None:
-            overrides["daily_limit"] = args.daily_limit
-        if args.market_limit is not None:
-            overrides["market_limit"] = args.market_limit
-        if args.backtest_report_path is not None:
-            overrides["backtest_report_path"] = args.backtest_report_path
-        if args.wallet_file is not None:
-            overrides["wallet_file"] = args.wallet_file
-
         config = build_config(
             config_file=args.config,
-            overrides=overrides,
+            defaults=_backtest_defaults(run_id),
+            overrides=_collect_overrides(
+                args,
+                (
+                    "edge_threshold",
+                    "stake_amount",
+                    "daily_limit",
+                    "market_limit",
+                    "backtest_report_path",
+                    "wallet_file",
+                    "uncertainty_no_trade_above",
+                    "max_spread_bps",
+                    "min_depth",
+                    "max_trade_size",
+                    "strategy_id",
+                ),
+            ),
         )
         runner = build_runner(mode="paper", config=config, run_id=run_id)
         report = runner.run_backtest(replay_file=args.replay_file)
@@ -123,14 +193,17 @@ def main():
         print(
             f"Win rate: {report.win_rate:.2%}" if report.win_rate is not None else "Win rate: N/A"
         )
+        brier = report.forecast_metrics.get("brier")
+        print(f"Brier score: {brier:.4f}" if brier is not None else "Brier score: N/A")
         print(
-            f"Average edge: {report.average_edge:.2%}"
+            f"Average executable edge: {report.average_edge:.2%}"
             if report.average_edge is not None
-            else "Average edge: N/A"
+            else "Average executable edge: N/A"
         )
-        print(f"Equity curve points: {len(report.equity_curve)}")
+        print(f"Trades filled/resolved: {report.trades_filled}/{report.trades_resolved}")
         return
 
 
 if __name__ == "__main__":
     main()
+
