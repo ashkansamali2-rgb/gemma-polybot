@@ -7,7 +7,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from polybot.paths import STATE_DIR
-from polybot_legacy.engine import PolyEngine
+from polybot_infra.engine import PolyEngine
 
 
 def run_system_check():

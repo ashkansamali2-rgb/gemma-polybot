@@ -18,7 +18,7 @@ from polybot.types import (
     ReplayFrame,
     SignalDecision,
 )
-from polybot_legacy.engine import PolyEngine
+from polybot_infra.engine import PolyEngine
 
 
 STRUCTURED_RESPONSE_SCHEMA = {

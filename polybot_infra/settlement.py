@@ -3,7 +3,7 @@ from typing import Optional
 
 import requests
 
-from polybot_legacy.paper_trader import PaperWallet
+from polybot_infra.paper_trader import PaperWallet
 
 G = "\033[92m"
 Y = "\033[93m"

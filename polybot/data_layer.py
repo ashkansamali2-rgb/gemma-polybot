@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from polybot.types import EvidenceRecord, FeatureSnapshot, MarketObservation, ReplayFrame
-from polybot_legacy.polymarket_api import fetch_live_polymarket_data
+from polybot_infra.polymarket_api import fetch_live_polymarket_data
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:

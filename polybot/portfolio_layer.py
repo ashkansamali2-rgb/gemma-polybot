@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from polybot_legacy.paper_trader import PaperWallet
+from polybot_infra.paper_trader import PaperWallet
 
 
 class PortfolioAccounting:

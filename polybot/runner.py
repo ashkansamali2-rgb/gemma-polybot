@@ -25,8 +25,8 @@ from polybot.portfolio_layer import PortfolioAccounting
 from polybot.risk_layer import RiskModel
 from polybot.signal_layer import CandidateRanker, MarketEnsembleGenerator
 from polybot.types import BacktestReport, ForecastRecord, ReplayFrame, TradeRecord
-from polybot_legacy.engine import PolyEngine
-from polybot_legacy.settlement import run_settlement
+from polybot_infra.engine import PolyEngine
+from polybot_infra.settlement import run_settlement
 
 
 @dataclass

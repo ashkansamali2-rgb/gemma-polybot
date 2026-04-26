@@ -7,7 +7,7 @@ from typing import Optional
 
 from polybot.config import ExecutionConfig
 from polybot.types import ExecutionPlan, ExecutionResult, MarketObservation
-from polybot_legacy.paper_trader import PaperWallet
+from polybot_infra.paper_trader import PaperWallet
 
 
 class ExecutionPlanner:
@@ -156,7 +156,7 @@ class PaperBroker(Broker):
 
 class LiveBroker(Broker):
     def __init__(self):
-        from polybot_legacy.secure_trader import SecureTrader
+        from polybot_infra.secure_trader import SecureTrader
 
         self.trader = SecureTrader(dry_run=False)
 

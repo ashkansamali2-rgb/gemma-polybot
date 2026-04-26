@@ -124,7 +124,7 @@ def main():
     run_id = new_run_id()
 
     if args.command == "settle":
-        from polybot_legacy.settlement import run_settlement
+        from polybot_infra.settlement import run_settlement
 
         run_settlement()
         return
