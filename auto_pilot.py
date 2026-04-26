@@ -34,11 +34,13 @@ BEAR_PROMPT_TEMPLATE = (
 )
 
 JUDGE_PROMPT_TEMPLATE = (
-    "<|im_start|>system\nAct as the Lead Quantitative Manager.<|im_end|>\n"
-    "<|im_start|>user\nReview the Bull Thesis and the Bear Thesis below. Compare them against the current Polymarket odds ({odds}). "
-    "Weigh the risk, find the true edge, and output your final verdict. "
-    "You must end your response with EXACTLY: FINAL_PROBABILITY: [XX]%.\n\n"
+    "<|im_start|>system\nAct as a Quantitative Analyst. Review the Bull Thesis and the Bear Thesis. "
+    "Output a brief 3-sentence summary of the mathematical reality. Then, exit all <think> tags "
+    "and output your final proprietary probability calculation on the last line matching this "
+    "exact format: FINAL_PROBABILITY: [XX]%.<|im_end|>\n"
+    "<|im_start|>user\n"
     "MARKET: {title}\n"
+    "CURRENT ODDS: {odds}\n"
     "BULL THESIS: {bull_thesis}\n"
     "BEAR THESIS: {bear_thesis}<|im_end|>\n"
     "<|im_start|>assistant\n"
@@ -58,7 +60,7 @@ def log_quantum(msg, color=G):
 
 def extract_probability(text):
     """Extracts the percentage from the FINAL_PROBABILITY: [XX]% format."""
-    match = re.search(r'FINAL_PROBABILITY:\s*\[?(\d+(?:\.\d+)?)\]?%', text)
+    match = re.search(r'FINAL_PROBABILITY:\s*(\d+(?:\.\d+)?)%', text, re.IGNORECASE)
     if match:
         return float(match.group(1)) / 100.0
     return None
@@ -123,7 +125,7 @@ def run_autopilot():
                 bull_thesis=bull_thesis, 
                 bear_thesis=bear_thesis
             )
-            final_analysis = engine.analyze(m, raw_prompt=judge_prompt)
+            final_analysis = engine.analyze(m, raw_prompt=judge_prompt, max_tokens=2048)
             print(f"{B}--- JUDGE VERDICT ---{C}\n{final_analysis}\n{B}---------------------{C}")
 
             # Extraction and Execution
