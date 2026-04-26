@@ -2,6 +2,7 @@ import time
 import random
 import json
 import sys
+import subprocess
 from datetime import datetime, date
 from engine import PolyEngine
 from paper_trader import PaperWallet
@@ -28,12 +29,11 @@ def log_quantum(msg, color=G):
 def fetch_top_markets():
     """
     Fetches real markets from Polymarket's Gamma API.
-    Filters for short-term expiration (0 < expiry_hours <= 10).
+    Filters for short-term expiration (0 < expiry_hours <= 24).
     """
-    markets = fetch_live_polymarket_data(limit=30)
-    # Filter for Expiry strictly in the future and <= 10h
-    filtered = [m for m in markets if 0 < m.get("expiry_hours", 0) <= 10]
-    return filtered
+    markets = fetch_live_polymarket_data(limit=1000)
+    markets.sort(key=lambda x: x['expiry_hours'])
+    return markets
 
 def run_autopilot():
     log_quantum("INITIATING_DAILY_SNIPER_AUTOPILOT...", B)
@@ -63,13 +63,13 @@ def run_autopilot():
         markets = fetch_top_markets()
         
         if not markets:
-            log_quantum("NO_QUALIFIED_MARKETS_FOUND (<= 10H). SLEEPING...", Y)
+            log_quantum("NO_QUALIFIED_MARKETS_FOUND (<= 24H). SLEEPING...", Y)
         
         for m in markets:
             if daily_trades >= DAILY_LIMIT:
                 break
 
-            log_quantum(f"ANALYZING: {m['title']}...", B)
+            print(f'[SYSTEM] Analyzing market resolving in {m["expiry_hours"]:.1f}h: {m["title"]}')
             
             # Analyze using Qwen 27B engine
             analysis = engine.analyze(m)
