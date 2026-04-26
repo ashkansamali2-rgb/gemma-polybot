@@ -13,9 +13,13 @@ poly_adapters/
 
 # Other
 __pycache__/
+.uv-cache/
 .DS_Store
-* .pyc
-
-
-
-
+*.pyc
+reports/
+state/
+.testdata/
+.pytest_cache/
+.tmp_pytest/
+pytest-cache-files-*/
+logs/

@@ -1,0 +1,13 @@
+mlx-lm
+mlx-vlm
+polymarket-apis
+streamlit
+python-dotenv
+pandas
+beautifulsoup4
+psutil
+requests
+pyyaml
+numpy
+pytest
+turboquant-mlx @ git+https://github.com/arozanov/turboquant-mlx.git

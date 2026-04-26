@@ -1,166 +1,170 @@
 # Gemma PolyBot
 
-Autonomous Polymarket research and paper-trading bot with:
-- MLX-based inference (`PolyEngine`)
-- a Bull/Bear/Judge debate loop
-- paper wallet + settlement simulation
-- optional secure live-order wrapper
-- Streamlit dashboard
+`experimental-enhancements` is now a calibration-first, uncertainty-aware research and trading runtime for Polymarket-style binary event markets.
 
-## What This Codebase Does
+The core design is:
+- Gamma-style discovery is separate from executable market state.
+- Bull/Bear/Judge remains the raw forecaster, but it no longer decides size or trade authority.
+- Every trade path runs through structured forecast parsing, walk-forward calibration, uncertainty estimation, executable-edge modeling, and portfolio/risk gates.
+- Replay/backtest mode is time-correct: evidence, calibration labels, and settlements are only released when their timestamps are due.
 
-PolyBot scans near-expiry Polymarket events, runs model reasoning, extracts a final probability, compares it with market price, and executes simulated buys when edge exceeds a threshold.
+## Current Runtime
 
-Flow:
-1. Fetch candidate markets from Polymarket Gamma API
-2. Generate Bull and Bear theses
-3. Judge outputs `FINAL_PROBABILITY: [XX]%`
-4. Compute edge: `ai_prob - market_price`
-5. Buy in paper wallet if edge is high enough
-6. Settle resolved markets and update wallet state
+Main package:
+- `polybot/data_layer.py`: canonical market normalization, provider merge logic, replay frames, evidence store, deterministic feature store
+- `polybot/signal_layer.py`: candidate ranking, retrieval-conditioned Bull/Bear/Judge prompting, strict JSON judge parsing, dataset scaffolding
+- `polybot/calibration.py`: walk-forward calibration artifacts, isotonic/beta/logistic calibration, uncertainty engine, conformal-style bands
+- `polybot/execution_layer.py`: maker-first execution planner, executable fill-price model, paper/live broker adapters
+- `polybot/risk_layer.py`: constrained Kelly sizing, uncertainty gating, exposure caps, circuit breakers, unwind triggers
+- `polybot/runner.py`: live cycle runner and event-driven walk-forward backtester
+- `polybot/analytics.py`: forecast/trade metrics, calibration curves, category diagnostics, benchmark metadata
+- `polybot/portfolio_layer.py`: wallet snapshots, exposure views, drawdown tracking
+- `polybot/config.py`: grouped strategy config for provider, retrieval, calibration, uncertainty, execution, sizing, exposure, evaluation, and ops
 
-## Repository Structure
+Legacy compatibility:
+- `polybot_legacy/` is still present for the underlying paper wallet, secure live trader wrapper, and model engine hooks.
 
-- `auto_pilot.py` - Main autonomous loop (paper mode)
-- `engine.py` - Model/adapters loading + inference wrapper
-- `polymarket_api.py` - Live market fetch/filter
-- `paper_trader.py` - Paper wallet and position bookkeeping
-- `settlement.py` - Market resolution and payouts
-- `app.py` - Streamlit dashboard
-- `secure_trader.py` - Dry-run/live order wrapper via `polymarket-apis`
-- `system_check.py` - Environment/model sanity check
-- `train.py` - LoRA training launcher (`mlx_vlm.lora`)
-- `evaluate.py` - Brier-score evaluation
-- `rigorous_test.py` - Trap-detection evaluation
-- `finetune/generate_data.py` - Synthetic trap dataset generation
-- `.env.template` - Env var template
-- `requirements.txt` - Dependencies
-
-## Prerequisites
-
-- Python 3.10+ (3.11 recommended)
-- `pip`
-- Internet access (Gamma API)
-- Model/adapters for `mlx-lm` / `mlx-vlm`
-
-Compatibility note:
-- `mlx-lm` / `mlx-vlm` are Apple Silicon-centric. On Windows/Linux, inference/training may require a different backend or a compatible macOS runtime.
-
-## Quick Setup
+## Quick Start
 
 ```bash
-# 1) Create virtual environment
 python -m venv .venv
-
-# 2) Activate
-# Windows (PowerShell)
 .venv\Scripts\Activate.ps1
-# macOS/Linux
-source .venv/bin/activate
-
-# 3) Install dependencies
 pip install -r requirements.txt
-
-# 4) Create env file
-copy .env.template .env.local   # Windows
-# cp .env.template .env.local   # macOS/Linux
+copy .env.template .env.local
 ```
 
-## Environment Variables
+Paper run:
 
-From `.env.template`:
-- `POLYMARKET_PK`
-- `POLYMARKET_ADDRESS`
-- `DRY_RUN=True`
-
-`secure_trader.py` stays in dry-run unless configured for live mode.
-
-## Run Commands
-
-System check:
 ```bash
-python system_check.py
+python -m polybot run --mode paper --once
 ```
 
-Start autonomous paper-trading:
+Replay backtest:
+
 ```bash
-python auto_pilot.py
+python -m polybot backtest --replay-file finetune/replay_snapshots.jsonl
 ```
 
-Manual settlement:
+Useful overrides:
+
 ```bash
-python settlement.py
+python -m polybot backtest \
+  --replay-file finetune/replay_snapshots.jsonl \
+  --edge-threshold 0.02 \
+  --uncertainty-no-trade-above 0.30 \
+  --max-spread-bps 600 \
+  --max-trade-size 2.0
 ```
 
 Dashboard:
-```bash
-streamlit run app.py
-```
-
-Secure trader wrapper test:
-```bash
-python secure_trader.py
-```
-
-## Training Commands
-
-Generate trap samples:
-```bash
-python finetune/generate_data.py
-```
-
-Run LoRA training launcher:
-```bash
-python train.py
-```
-
-`train.py` expects:
-- `finetune/train.jsonl`
-- output adapters in `poly_adapters/`
-
-## Evaluation Commands
-
-Rigorous trap test:
-```bash
-python rigorous_test.py
-```
-
-Brier evaluation:
-```bash
-python evaluate.py
-```
-
-## Build and Deploy
-
-This repo currently has no packaged build artifact (no Dockerfile/CI release pipeline). Practical deployment is service-style:
 
 ```bash
-# bot service
-python auto_pilot.py
-
-# optional UI service
-streamlit run app.py --server.port 8501
+python -m polybot dashboard
 ```
 
-Recommended production hardening (future work):
-- Add `Dockerfile` + `docker-compose.yml`
-- Add process supervision (`systemd`, `pm2`, or `supervisord`)
-- Centralize logs/alerts for `trading.log`
-- Use secrets manager instead of local env files
+## Config Shape
 
-## State and Logs
+Use `polybot.config.example.yaml` as the reference. The top-level groups are:
+- `provider`
+- `retrieval`
+- `calibration`
+- `uncertainty`
+- `market_filters`
+- `execution`
+- `sizing`
+- `exposure`
+- `evaluation`
+- `ops`
+- `versions`
 
-- `sim_wallet.json` - paper wallet state
-- `trading.log` - runtime log output
-- `paper_trades.log` - dry-run secure trader log
+Legacy flat keys like `edge_threshold`, `stake_amount`, `daily_limit`, `market_limit`, `backtest_report_path`, and `wallet_file` still load through the compatibility mapper.
 
-Never commit private keys or secrets.
+## Replay Format
 
-## Typical Workflow
+Backtests accept JSONL. Each line may be either:
+
+1. A canonical frame
+
+```json
+{
+  "snapshot_id": "snap-001",
+  "market": {
+    "market_id": "m1",
+    "event_id": "e1",
+    "title": "Will CPI print above consensus?",
+    "description": "US CPI release",
+    "resolution_criteria": "Official BLS release",
+    "category": "macro",
+    "forecast_timestamp": 1710000000,
+    "expiry_timestamp": 1710003600,
+    "best_bid": 0.47,
+    "best_ask": 0.49,
+    "depth_bid": 2000,
+    "depth_ask": 1800,
+    "tick_size": 0.01,
+    "fee_schedule": {"maker_bps": 0, "taker_bps": 80},
+    "orderbook_timestamp": 1710000000
+  },
+  "evidence": [
+    {
+      "evidence_id": "ev1",
+      "source_url": "https://example.com/report",
+      "source_type": "news",
+      "publication_timestamp": 1709999000,
+      "ingestion_timestamp": 1709999100,
+      "source_credibility": 0.85,
+      "source_credibility_metadata": {"tier": "wire"},
+      "extracted_claims": ["Consensus moved higher"],
+      "summary": "Consensus estimate revised upward"
+    }
+  ],
+  "resolution": {
+    "resolved_outcome": "YES",
+    "resolution_timestamp": 1710007200
+  }
+}
+```
+
+2. A flat legacy-style market snapshot
+
+```json
+{"title":"Will BTC close above 70k today?","price":0.62,"forecast_timestamp":1710000000}
+```
+
+If `resolved_outcome` is present, the upgraded runner only uses that label for calibration or settlement once the resolution timestamp becomes due.
+
+## What Changed From The Old Bot
+
+Old flow:
+- fetch market
+- ask judge for one free-form probability
+- compare with market mid
+- buy fixed stake
+
+New flow:
+1. Normalize market discovery and executable state into a canonical snapshot.
+2. Retrieve only evidence available as of the forecast timestamp.
+3. Compute deterministic feature groups.
+4. Rank/filter candidates before expensive LLM calls.
+5. Require judge JSON with `raw_probability`, rationale fields, and evidence references.
+6. Calibrate the raw probability with walk-forward artifacts.
+7. Estimate composite uncertainty from multiple judge samples and disagreement signals.
+8. Model executable fill price, fees, slippage, and uncertainty haircuts.
+9. Apply constrained Kelly sizing plus exposure and drawdown controls.
+10. Log versioned artifacts and produce forecast/trade diagnostics in the backtest report.
+
+## Verification
 
 ```bash
-pip install -r requirements.txt
-python system_check.py
-python auto_pilot.py
-streamlit run app.py
+pytest -q
 ```
+
+The current test suite covers:
+- canonical schema merge correctness
+- replay-safe evidence retrieval
+- structured JSON parsing with safe HOLD fallback
+- calibration artifact fitting/prediction
+- uncertainty aggregation behavior
+- post-cost edge and risk gating
+- walk-forward backtest timing and delayed settlement behavior
+

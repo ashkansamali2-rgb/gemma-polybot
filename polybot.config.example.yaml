@@ -1,0 +1,99 @@
+polling_interval: 300
+
+provider:
+  discovery_provider: gamma
+  executable_provider: clob
+  market_limit: 1000
+  stale_quote_seconds: 90
+  max_horizon_hours: 48
+  platform_version: polymarket-2026
+  capability_flags:
+    supports_negative_risk: false
+    supports_dynamic_fees: true
+    supports_partial_fills: true
+    supports_inventory_reduction: true
+
+retrieval:
+  enabled: true
+  max_evidence_items: 6
+  max_evidence_age_hours: 168
+  min_source_credibility: 0.4
+  deduplicate_sources: true
+
+calibration:
+  enabled: true
+  methods_priority:
+    - isotonic
+    - beta
+    - logistic
+  min_isotonic_samples: 25
+  min_category_samples: 12
+  training_window: 250
+  artifact_version: cal-v1
+
+uncertainty:
+  judge_samples: 5
+  prompt_variants: 3
+  evidence_subsets: 3
+  no_trade_above: 0.35
+  update_instability_penalty: 0.5
+  conformal_quantile: 0.9
+
+market_filters:
+  min_edge_threshold: 0.03
+  max_spread_bps: 800
+  min_depth: 50
+  min_volume: 0
+  require_tradable_token_live: true
+  exclude_ambiguous_rules: true
+
+execution:
+  execution_mode: maker_first
+  maker_timeout_sec: 45
+  cancel_replace_policy: one_cancel_then_cross
+  max_cross_spread_bps: 75
+  min_remaining_edge_after_cross: 0.01
+  slippage_haircut_bps: 15
+  default_maker_fee_bps: 0
+  default_taker_fee_bps: 100
+  model_partial_fill_ratio: 0.7
+
+sizing:
+  default_stake_amount: 1.0
+  fractional_kelly: 0.25
+  min_trade_size: 0.5
+  max_trade_size: 3.0
+  uncertainty_haircut_scale: 0.5
+  liquidity_haircut_scale: 0.5
+
+exposure:
+  daily_trade_limit: 5
+  category_capital_limit: 5.0
+  thesis_capital_limit: 3.0
+  unresolved_position_limit: 8
+  max_drawdown_pct: 0.25
+
+evaluation:
+  backtest_report_path: reports/backtest_report.json
+  wallet_file: state/sim_wallet.json
+  benchmark_windows: 3
+  benchmark_strategy_id: champion
+  challenger_strategy_ids:
+    - baseline
+
+ops:
+  log_file: logs/trading.log
+  global_pause_file: state/global_pause.json
+  enable_auto_pause: true
+  recalibration_frequency: daily
+  max_live_slippage_model_error_bps: 150
+
+versions:
+  strategy_id: experimental-enhancements
+  model_version: bull-bear-judge
+  prompt_version: judge-json-v1
+  calibrator_version: cal-v1
+  uncertainty_version: unc-v1
+  ranker_version: rank-v1
+  execution_version: exec-v1
+
