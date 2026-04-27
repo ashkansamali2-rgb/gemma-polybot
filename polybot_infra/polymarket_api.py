@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-
 def fetch_live_polymarket_data(limit=1000):
     max_date = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     url = (

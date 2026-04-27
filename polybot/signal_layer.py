@@ -44,7 +44,7 @@ BULL_PROMPT_TEMPLATE = (
 BEAR_PROMPT_TEMPLATE = (
     "<|im_start|>system\nAct as a skeptical risk manager focused on failure modes, weak evidence,"
     " and microstructure traps. Use only the supplied context.<|im_end|>\n"
-    "<|im_start|>user\n{context}\n\nBULL THESIS:\n{bull_thesis}<|im_end|>\n<|im_start|>assistant\n"
+    "<|im_start|>user\n{context}<|im_end|>\n<|im_start|>assistant\n"
 )
 
 JUDGE_PROMPT_TEMPLATE = (
@@ -205,10 +205,14 @@ ENSEMBLE_PROMPT_TEMPLATE = (
 )
 
 PERSONAS = [
-    "Aggressive Momentum Trader", "Skeptical Value Investor", "Pure Statistician",
-    "Contrarian Risk-Seeker", "Geopolitical Hawk", "Market Microstructure Expert",
-    "Macro-Economist", "News-Driven Retail Trader", "Algorithmic Arbitrageur",
-    "Conservative Option Writer", "High-Frequency Taker", "Behavioral Finance Expert",
+    "Algorithmic Arbitrageur", "High-Frequency Taker", "Pure Statistician",
+    "Market Microstructure Expert", "Order Flow Analyst", "Options Volatility Trader",
+    "Macro-Economist", "Skeptical Value Investor", "Conservative Option Writer",
+    "Tail-Risk Hedger", "Deep-Value Researcher", "Aggressive Momentum Trader",
+    "News-Driven Retail Trader", "Contrarian Risk-Seeker", "Behavioral Finance Expert",
+    "Social Media Sentiment Analyst", "Geopolitical Hawk", "Silicon Valley Tech Insider",
+    "Regulatory Policy Expert", "Election Pollster Analyst", "Crypto-Native Degen",
+    "Global Trade Specialist", "Legal & Compliance Analyst", "Pop-Culture Phenomenon Forecaster"
 ]
 
 
@@ -259,18 +263,50 @@ class MarketEnsembleGenerator:
         evidence = self._select_evidence(frame.evidence, market.category)
         context = self._build_context(frame, evidence)
 
-        print(f"[SYSTEM] Spinning up {self.config.uncertainty.ensemble_agents}-Agent Internal Market Ensemble...")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        print("[SYSTEM] Executing Phase 1: Deep Adversarial Reasoning (Bull vs Bear)...")
+        bull_prompt = BULL_PROMPT_TEMPLATE.format(context=context)
+        bear_prompt = BEAR_PROMPT_TEMPLATE.format(context=context)
+        
+        bull_thesis = ""
+        bear_thesis = ""
+        
+        def _get_adversary(side: str):
+            prompt = bull_prompt if side == "BULL" else bear_prompt
+            try:
+                return side, self.engine.analyze(market.to_dict(), raw_prompt=prompt, max_tokens=1024)
+            except Exception as e:
+                print(f"[ERROR] {side} generation failed: {e}")
+                return side, ""
+                
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(_get_adversary, side) for side in ["BULL", "BEAR"]]
+            for future in as_completed(futures):
+                side, result = future.result()
+                if side == "BULL":
+                    bull_thesis = result
+                else:
+                    bear_thesis = result
+
+        enriched_context = (
+            f"{context}\n\n"
+            f"--- ADVERSARIAL ANALYSIS ---\n"
+            f"BULL THESIS:\n{bull_thesis}\n\n"
+            f"BEAR THESIS:\n{bear_thesis}\n"
+        )
+
+        print(f"[SYSTEM] Executing Phase 2: Spinning up {self.config.uncertainty.ensemble_agents}-Agent Hybrid Market Ensemble...")
 
         bids = []
         asks = []
         rationales = []
         
         # Internal Order Book Generation
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         def _get_quote(i):
             persona = PERSONAS[i % len(PERSONAS)]
-            prompt = ENSEMBLE_PROMPT_TEMPLATE.format(persona=persona, context=context)
+            prompt = ENSEMBLE_PROMPT_TEMPLATE.format(persona=persona, context=enriched_context)
             try:
                 output = self.engine.analyze(market.to_dict(), raw_prompt=prompt, max_tokens=1024)
                 return persona, extract_ensemble_quote(output)
@@ -359,8 +395,8 @@ class MarketEnsembleGenerator:
             key_drivers=["Ensemble Demand Concentration", "Persona-weighted bids"],
             counter_drivers=["Ensemble Supply Resistance", "Persona-weighted asks"],
             invalidation_condition="Major internal orderbook imbalance shift",
-            short_rationale=f"Market Ensemble Equilibrium at {equilibrium_price:.2f}. " + "\n".join(rationales[:2]),
-            raw_analysis=f"Total Quotes: {len(bids)}. Top Bid/Ask: {max(bids):.2f}/{min(asks):.2f}",
+            short_rationale=f"Hybrid Ensemble Equilibrium at {equilibrium_price:.2f}. " + "\n".join(rationales[:2]),
+            raw_analysis=f"Total Quotes: {len(bids)}. Top Bid/Ask: {max(bids):.2f}/{min(asks):.2f}. Enriched w/ Bull/Bear context.",
             calibration_artifact_version=calibration_artifact.version,
             calibration_method=calibration_artifact.method,
             execution_mode=self.config.execution.execution_mode,
